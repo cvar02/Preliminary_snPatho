@@ -1,0 +1,91 @@
+# Preliminary snPATHO-seq Analysis
+
+## Project overview
+
+This repository contains preliminary computational workflows for processing and exploring single-nucleus RNA-sequencing data generated from GIST specimens. The scripts span Cell Ranger multi-sample processing, CellBender background removal, per-sample quality-control review, doublet-calling comparisons, sample-level PCA clustering and an alternative pooled scVI clustering/validation workflow. The sample names in the code are PATH01–PATH04; the repository itself does not include the count matrices, Cell Ranger configuration CSVs, intermediate AnnData objects, environment lockfiles or result files.
+
+The scientific purpose is to characterise the cellular composition of GIST specimens and create analysis outputs that can support later tumour-microenvironment interpretation. The code documents computational procedures and candidate marker visualisation. It does not by itself establish cell identities, subtype effects, treatment response, or successful completion of any analysis. In particular, a UMAP or cluster-marker output is an exploratory representation requiring biological review and validation.
+
+The repository is developmental and branch-oriented. Some branch names suggest successive stages, but the Git history is not a single linear, executable pipeline: the `main` tip is identical to `4_Sample_Integration`, whose committed tree contains only the placeholder README. The raw-processing, QC, doublet, sample-level clustering and pooled clustering workflows are on separate branch tips. The `4_Sample_Integration` branch contains no integration implementation, while the pooled clustering scripts require external `merged_scVI_25PCs.h5ad` and `merged_scVI_30PCs.h5ad` objects. Treat the branch table and branch README files as the authoritative inventory of what is actually present.
+
+## Repository structure
+
+The repository has no nested source directories in the branch snapshots; each branch contains its files at its root. This tree combines files across branches for orientation and does not imply all files coexist in one checkout.
+
+```text
+Preliminary_snPatho/
+├── 1_Raw_Processing/                 # Cell Ranger and CellBender shell workflows
+│   ├── CellRangerMulti.sh
+│   ├── RunCellBender.sh
+│   └── RunCellBenderAll.sh
+├── 2_QC_Figures/                     # Per-sample raw/CellBender QC and filtering
+│   ├── QCandFigures.py
+│   └── QC_Figures_All.sh
+├── 3_Doublet_Removal/                # Python/R doublet callers and SLURM launchers
+│   ├── pythonDoublet.py
+│   ├── scDBLFinder.R
+│   └── *.sh
+├── 4_Sample_Integration/             
+├── 5B_Indiv_Clustering_Investigation/ # Separate PATH02/PATH03/PATH04 PCA workflows
+│   ├── PATH02.py
+│   ├── PATH03.py
+│   └── PATH04.py
+└── 5_Clustering/                     # Pooled scVI Leiden screen, validation and sensitivity
+    ├── 1_LeidenClustering.py
+    ├── 2_ClusteringValidation.py
+    ├── 3_kMeansValidation.py
+    ├── 4_ClusteringAnnotation.py
+    └── 5_DownsamplingAnalysis.py
+```
+
+
+## Analysis workflow
+
+The code supports the following conceptual stages:
+
+1. **Cell Ranger processing (`1_Raw_Processing`)**: `CellRangerMulti.sh` checks for per-sample multi configuration CSVs, runs `cellranger multi` for PATH01–PATH04 and constructs an aggregation CSV from available `molecule_info.h5` files before calling `cellranger aggr --normalize=mapped`. CellBender is launched separately by sample-specific scripts and removes background from raw feature-barcode matrices.
+2. **QC review and filtering (`2_QC_Figures`)**: `QCandFigures.py` compares raw and CellBender matrices, calculates barcode-level counts, detected genes and mitochondrial percentage, applies count and mitochondrial cutoffs to the CellBender matrix, and writes QC plots, a filtered `.h5ad` and a one-row summary CSV. The shell wrapper selects a sample through its working-directory name and invokes this script.
+3. **Doublet calling (`3_Doublet_Removal`)**: `pythonDoublet.py` runs Scrublet and DoubletDetection on one CellBender matrix and saves per-barcode calls/scores, summary statistics and an annotated AnnData object. `scDBLFinder.R` independently applies scDblFinder to the same class of input and saves barcode calls, summary and an SCE object. These scripts detect and report calls; they do not remove doublets. Some additional launchers target absent scripts, so the committed branch does not define a complete removal/QC workflow.
+4. **Sample-level exploratory clustering (`5B_Indiv_Clustering_Investigation`)**: each PATH script independently reprocesses a doublet-filtered sample object, selects HVGs, runs PCA, constructs a PCA-space neighbour graph, calculates UMAP/Leiden labels, ranks cluster-associated genes with Wilcoxon tests and exports marker figures/tables. Parameters and DEG retention differ by sample.
+5. **Pooled scVI-based clustering (`5_Clustering`)**: `1_LeidenClustering.py` screens 25- and 30-dimensional scVI representations over four neighbour counts and five Leiden resolutions. Follow-on scripts compare selected labelings with ARI/NMI, evaluate K-means against a chosen Leiden partition, export marker rankings and plot curated marker panels, and perform one seeded subtype-balanced reclustering analysis.
+
+The intended ordering within `5_Clustering` is supported by hard-coded input/output paths: run the Leiden screen before scripts 2, 3, 4 and 5. Scripts 2–5 are downstream analyses that can read the screen outputs independently. The clustering screen inputs are not generated by a committed integration branch in this repository.
+
+## Branch overview
+
+| Branch | Main purpose | Key analyses | Relationship to project |
+|---|---|---|---|
+| [`1_Raw_Processing`](Branches/1_Raw_Processing/README.md) | Sequencing matrix processing | Cell Ranger multi, aggregation, CellBender background removal | Upstream data preparation; external sample configs and FAST5/feature-barcode inputs required |
+| [`2_QC_Figures`](Branches/2_QC_Figures/README.md) | Barcode QC and filtering | Raw vs CellBender QC plots; threshold-based QC; `.h5ad` and CSV output | Consumes raw and CellBender matrices; is not connected by a checked-in workflow to doublet scripts |
+| [`3_Doublet_Removal`](Branches/3_Doublet_Removal/README.md) | Compare doublet callers | Scrublet, DoubletDetection, scDblFinder; per-barcode scores/calls | Detection/comparison only in present Python/R scripts; launchers also reference absent scripts |
+| [`4_Sample_Integration`](Branches/4_Sample_Integration/README.md) | No implemented analysis | Placeholder README only | `main` points to the same commit/tree; no integration code to document |
+| [`5B_Indiv_Clustering_Investigation`](Branches/5B_Indiv_Clustering_Investigation/README.md) | Per-sample cluster exploration | PCA, neighbours, UMAP, Leiden, Wilcoxon ranking and candidate marker plots | Separate PATH02/03/04 analyses; their settings and DEG filters are not uniform |
+| [`5_Clustering`](Branches/5_Clustering/README.md) | Pooled cluster screening and checks | scVI25/30 Leiden parameter grid; ARI/NMI, K-means, marker review, subtype downsampling | Uses external scVI objects; internally ordered by generated H5AD paths |
+| [`main`](Branches/main/README.md) | Repository landing branch | Placeholder README only | Same commit as `4_Sample_Integration`; does not contain the other branch workflows |
+
+## Software and computational environment
+
+Versions are reported only where the repository explicitly pins or identifies them. No `requirements.txt`, `environment.yml`, `renv.lock`, session information or package lockfile is present.
+
+| Software / package | Purpose in repository | Version |
+|---|---|---|
+| Cell Ranger | `multi` processing and `aggr`; executable path names `cellranger-10.0.0` | 10.0.0 (path label) |
+| CellBender | `remove-background` on raw feature-barcode HDF5 | [VERSION TO CONFIRM] |
+| Python | QC, doublet calls and Scanpy analysis | Python 3.7 is stated in a CellBender shell comment; other runtime version [VERSION TO CONFIRM] |
+| Scanpy / AnnData | `.h5ad` input, QC, PCA, neighbours, Leiden, UMAP, ranking and plots | [VERSION TO CONFIRM] |
+| NumPy, pandas, SciPy, Matplotlib | Array, table, sparse matrix and plotting operations | [VERSION TO CONFIRM] |
+| Scrublet | Python doublet detection | [VERSION TO CONFIRM] |
+| DoubletDetection | Python doublet detection | [VERSION TO CONFIRM] |
+| R / SingleCellExperiment / scDblFinder / DropletUtils / Matrix | R doublet detection and 10x HDF5 import | [VERSION TO CONFIRM] |
+| scikit-learn | ARI/NMI metrics and K-means validation | [VERSION TO CONFIRM] |
+| SLURM (`sbatch`) and Conda | HPC job submission and environment activation in shell scripts | [VERSION TO CONFIRM] |
+
+## Main outputs
+
+Depending on the branch and run configuration, outputs include Cell Ranger `outs` directories and aggregated matrices; CellBender HDF5 matrices; QC PNGs, filtered `.h5ad` files and CSV summaries; doublet-call CSVs and annotated `.h5ad`/`.rds` objects; scVI parameter-screen AnnData objects; cluster composition/parameter CSVs; marker tables and figures; and a balanced-subsample AnnData object with UMAP and marker outputs. These are script-defined destinations, not evidence that outputs exist or that the scripts ran successfully. Most destinations are absolute paths under `/home/cv1u24`, `/iridisfs/home/cv1u24` or `/scratch/cv1u24` and need adaptation for another machine.
+
+## Current status and limitations
+
+The repository includes working-looking analysis scripts but no data, configuration files, dependency definitions or execution logs. `4_Sample_Integration` and `main` contain no integration code. Several doublet launchers call scripts not present in the branch. PATH02–PATH04 analyses create candidate cluster annotations based on marker overlap; these are not independently validated cell-type labels. The pooled scVI scripts assume prior preprocessing and integration and require consistent metadata (`sample`, `gist_subtype`) plus an `X_scVI` representation of the expected dimensionality. Spatial transcriptomics is maintained separately in `Preliminary_Spatial`; this repository does not perform spatial profiling.
+
+For detailed methods and file-level descriptions, use the branch links in the table above.
